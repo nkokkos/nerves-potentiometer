@@ -1,1 +1,319 @@
+# LiveBook Integration for Nerves Potentiometer Poncho Project
 
+## Overview
+
+This notebook demonstrates how to connect to your Nerves poncho project and visualize potentiometer data in real-time using LiveBook.
+
+## Setup
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.12"},
+  {:kino_vega_lite, "~> 0.1"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Connect to the Nerves App
+
+The poncho project structure makes it easy to connect to either the UI project (for development) or the firmware project (for production data).
+
+```elixir
+defmodule PotentiometerMonitor do
+  use GenServer
+  
+  def start_link(_opts) do
+    GenServer.start_link(__MODULE__, [], name: __MODULE__)
+  end
+  
+  def init(_opts) do
+    # Simulate receiving potentiometer readings from the pubsub
+    :timer.send_interval(100, :new_reading)
+    {:ok, %{readings: []}}
+  end
+  
+  def handle_info(:new_reading, state) do
+    # Simulate potentiometer values between 0-5V with realistic patterns
+    base_voltage = 2.5
+    noise = (:rand.uniform(200) - 100) / 1000.0  # ±0.1V noise
+    trend = :math.sin(System.system_time(:millisecond) / 10000.0) * 0.5
+    
+    voltage = base_voltage + noise + trend
+    voltage = max(0, min(5, voltage))
+    
+    reading = %{
+      voltage: voltage,
+      timestamp: DateTime.utc_now(),
+      raw_adc: round((voltage / 5.0) * 32767)
+    }
+    
+    new_readings = [reading | state.readings] |> Enum.take(100)
+    {:noreply, %{state | readings: new_readings}}
+  end
+  
+  def get_readings do
+    GenServer.call(__MODULE__, :get_readings)
+  end
+  
+  def handle_call(:get_readings, _from, state) do
+    {:reply, state.readings, state}
+  end
+end
+
+# Start the monitor
+PotentiometerMonitor.start_link([])
+```
+
+## Real-time Chart
+
+```elixir
+alias VegaLite, as: Vl
+
+# Create the chart specification
+chart =
+  Vl.new(width: 800, height: 400)
+  |> Vl.data_from_values([])
+  |> Vl.mark(:line, point: true)
+  |> Vl.encode_field(:x, "timestamp", 
+    type: :temporal,
+    title: "Time"
+  )
+  |> Vl.encode_field(:y, "voltage",
+    type: :quantitative,
+    title: "Voltage (V)",
+    scale: [domain: [0, 5]]
+  )
+  |> Vl.encode_field(:color, value: "#007bff")
+  |> Kino.VegaLite.new()
+  |> Kino.render()
+
+# Update the chart with real-time data
+Kino.VegaLite.periodically(chart, 100, 0, fn i ->
+  readings = PotentiometerMonitor.get_readings()
+  
+  chart_data = 
+    readings
+    |> Enum.reverse()
+    |> Enum.map(fn reading ->
+      %{
+        timestamp: reading.timestamp,
+        voltage: reading.voltage
+      }
+    end)
+  
+  Kino.VegaLite.push(chart, chart_data, window: 50)
+end)
+
+chart
+```
+
+## Current Value Display
+
+```elixir
+# Create a frame for current values
+frame = Kino.Frame.new()
+
+# Update current reading display
+Task.start(fn -> loop_display() end)
+
+defp loop_display do
+  readings = PotentiometerMonitor.get_readings()
+  
+  case readings do
+    [current | _] ->
+      content = [
+        "# Current Potentiometer Reading",
+        "",
+        "**Voltage:** #{Float.round(current.voltage, 3)} V",
+        "**Raw ADC:** #{current.raw_adc}",
+        "**Time:** #{DateTime.to_string(current.timestamp)}",
+        "",
+        "## Trend Analysis",
+        calculate_trend(readings),
+        "",
+        "## Poncho Project Info",
+        "- **UI Project:** nerves_potentiometer_ui",
+        "- **Firmware Project:** nerves_potentiometer_firmware", 
+        "- **Structure:** Proper poncho project with path dependencies"
+      ]
+      
+      Kino.Frame.render(frame, content)
+      
+    [] ->
+      Kino.Frame.render(frame, "Waiting for readings...")
+  end
+  
+  :timer.sleep(100)
+  loop_display()
+end
+
+defp calculate_trend(readings) when length(readings) < 5, do: "Calculating trend..."
+
+defp calculate_trend(readings) do
+  recent = Enum.take(readings, 5)
+  voltages = Enum.map(recent, & &1.voltage)
+  avg = Enum.sum(voltages) / length(voltages)
+  max_v = Enum.max(voltages)
+  min_v = Enum.min(voltages)
+  
+  trend = cond do
+    avg > 3.0 -> "High range"
+    avg < 2.0 -> "Low range" 
+    true -> "Mid range"
+  end
+  
+  """
+  - **Average (last 5):** #{Float.round(avg, 3)} V (#{trend})
+  - **Range (last 5):** #{Float.round(min_v, 3)} - #{Float.round(max_v, 3)} V
+  - **Peak:** #{Float.round(max_v, 3)} V
+  - **Stability:** #{if max_v - min_v < 0.1, do: "Stable", else: "Variable"}
+  """
+end
+
+frame
+```
+
+## Data Export
+
+```elixir
+# Export readings to CSV
+export_button = Kino.Control.button("Export Readings to CSV")
+
+Kino.Control.render(export_button)
+
+Kino.Control.subscribe(export_button, :click)
+
+receive do
+  {:click, _} ->
+    readings = PotentiometerMonitor.get_readings()
+    
+    csv_content = 
+      ["Timestamp,Voltage,RawADC,Project"] ++
+      (readings
+       |> Enum.reverse()
+       |> Enum.map(fn reading ->
+         "#{DateTime.to_iso8601(reading.timestamp)},#{reading.voltage},#{reading.raw_adc},poncho_project"
+       end))
+      |> Enum.join("\n")
+    
+    Kino.Download.new(:potentiometer_readings.csv, csv_content)
+end
+```
+
+## Connection Instructions
+
+### For Development (UI Project Only)
+
+```elixir
+# Connect to running UI project on host
+Node.connect(:"nerves_potentiometer_ui@localhost")
+
+# Access the UI PubSub
+:rpc.call(:"nerves_potentiometer_ui@localhost", Phoenix.PubSub, :subscribe, [
+  NervesPotentiometerUi.PubSub, 
+  "potentiometer_readings"
+])
+```
+
+### For Production (Firmware Project)
+
+```elixir
+# Connect to running Nerves device
+Node.connect(:"nerves_potentiometer_firmware@nerves-potentiometer.local")
+
+# Access hardware data through the firmware
+:rpc.call(:"nerves_potentiometer_firmware@nerves-potentiometer.local", 
+             NervesPotentiometerFirmware.PotentiometerReader, 
+             :get_current_reading, [])
+```
+
+## Hardware Setup Verification
+
+```elixir
+# Hardware checklist for poncho project
+hardware_check = Kino.Markdown.new("""
+## Poncho Project Hardware Checklist
+
+### ✅ Required Components
+- [ ] Raspberry Pi Zero Wireless
+- [ ] ADS1115 ADC Breakout Board
+- [ ] 10kΩ Potentiometer
+- [ ] Jumper wires
+- [ ] Breadboard
+
+### ✅ Wiring Connections (I2C)
+- [ ] Potentiometer outer pins: 5V and GND
+- [ ] Potentiometer wiper: ADS1115 A0 pin
+- [ ] ADS1115 VDD: Pi 3.3V
+- [ ] ADS1115 GND: Pi GND
+- [ ] ADS1115 SDA: Pi GPIO 2 (SDA)
+- [ ] ADS1115 SCL: Pi GPIO 3 (SCL)
+
+### ✅ Poncho Project Verification
+- [ ] nerves_potentiometer_ui project builds independently
+- [ ] nerves_potentiometer_firmware project includes UI as path dependency
+- [ ] UI works on host: `cd nerves_potentiometer_ui && mix phx.server`
+- [ ] I2C device detected: `i2cdetect -y 1`
+- [ ] ADS1115 shows up at address 0x48
+- [ ] Firmware successfully builds and deploys
+- [ ] Phoenix LiveView accessible at http://nerves-potentiometer.local:4000
+
+### ✅ Development Workflow Test
+- [ ] UI development possible without hardware
+- [ ] Asset building works: `mix assets.deploy`
+- [ ] Firmware building works: `mix firmware`
+- [ ] Path dependencies properly configured
+""")
+
+Kino.render(hardware_check)
+```
+
+## Poncho Project Benefits
+
+```elixir
+benefits = Kino.Markdown.new("""
+## Why This Poncho Project is Better
+
+### 🎯 Clear Separation
+- **UI Project**: Pure Phoenix web development, works on any machine
+- **Firmware Project**: Embedded-specific code, hardware interfacing
+- **Path Dependency**: Clean, explicit dependency relationship
+
+### 🚀 Development Workflow
+- **Frontend Team**: Work in `nerves_potentiometer_ui` without hardware
+- **Embedded Team**: Work in `nerves_potentiometer_firmware` with hardware
+- **Asset Handling**: Built on host, deployed to device
+
+### 🔧 Configuration Management
+- **UI Config**: Phoenix settings, development tools
+- **Firmware Config**: Imports UI, overrides for embedded deployment
+- **Target-Specific**: Different configs for different hardware
+
+### 📦 Dependencies
+- **UI Only**: Phoenix, LiveView, asset tools (host-only runtime)
+- **Firmware**: Nerves, hardware libraries, networking (embedded runtime)
+- **No Conflicts**: Dev tools don't bloat firmware
+
+### 🏗️ Build Process
+1. Build UI assets on host machine
+2. Build firmware with embedded UI
+3. Deploy firmware to device
+4. UI runs embedded on device
+
+This is the **recommended Nerves project structure**!
+""")
+
+Kino.render(benefits)
+```
+
+## Notes
+
+- This LiveBook works with the poncho project structure
+- Data comes from either UI project (development) or firmware project (production)
+- The poncho structure enables better team collaboration
+- Assets are handled properly for embedded deployment
+- Follows Nerves best practices and recommendations
+""")
+
+Kino.render(notebook_content)
+```

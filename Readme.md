@@ -19,22 +19,7 @@ A poncho project is an alternative to umbrella projects that uses separate Mix p
 ## Project Structure
 
 ```
-nerves_potentiometer/
-├── README.md                     # This file
-├── build.sh                      # Build and deploy script
-├── nerves_potentiometer_firmware/ # Nerves firmware project
-│   ├── mix.exs                   # Firmware dependencies (includes UI as path dep)
-│   ├── lib/                      # Hardware logic (ADC, I2C, sensors)
-│   ├── config/                   # Nerves configuration
-│   └── priv/                    # Firmware assets
-├── nerves_potentiometer_ui/       # Phoenix UI project  
-│   ├── mix.exs                   # UI dependencies (development-focused)
-│   ├── lib/                      # Phoenix LiveView and web logic
-│   ├── assets/                   # CSS, JS, images
-│   ├── priv/                     # Web assets and static files
-│   └── config/                   # Phoenix configuration
-└── livebook/                     # LiveBook notebooks for data analysis
-    └── potentiometer_monitor.livemd
+In Progress
 ```
 
 ## Why Poncho Over Umbrella?

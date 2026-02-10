@@ -18,6 +18,10 @@ defmodule UiWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+
+    # Add live feature
+    live "/voltage", VoltageLive
+   
   end
 
   # Other scopes may use custom stacks.

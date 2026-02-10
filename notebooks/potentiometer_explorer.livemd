@@ -2,7 +2,6 @@
 
 ## Setup
 ```elixir
-# The code we discussed
 Phoenix.PubSub.subscribe(Ui.PubSub, "voltage")
 chart = Kino.VegaLite.new() 
         |> Kino.VegaLite.component(:line, x: "time", y: "voltage")

@@ -55,7 +55,8 @@ defmodule Firmware.MixProject do
 
       # add deps for this platform  using the adc 1115  breakout chip
       {:ads1115, "~> 0.1"},
-      {:ui, path: "../ui", runtime: false} # Link the UI
+      {:ui, path: "../ui",  runtime: false}   # Link the UI
+      {:livebook, "~> 0.11", runtime: false}, # Add notebook feature
     ]
   end
 

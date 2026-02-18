@@ -1,0 +1,61 @@
+To get your laptop talking to your Raspberry Pi, you have to configure the "security badge" (the Cookie) and the "mailing address" (the Node Name).
+
+Since you are in a Poncho project, follow these steps inside your firmware folder.
+Step 1: Open rel/env.sh.eex
+
+This file is a template that Nerves uses to set up the environment every time the Pi boots. Open it in your editor: firmware/rel/env.sh.eex.
+Step 2: Add the Configuration
+
+Paste these lines at the bottom of that file. This tells the Erlang VM to start the networking system and set its password.
+Bash
+
+# 1. Enable networking (Distributed Erlang)
+export RELEASE_DISTRIBUTION="name"
+
+# 2. Give the Pi a name so your laptop can find it
+# This will result in something like: potentiometer@nerves.local
+export RELEASE_NODE="<%= @release.name %>@nerves.local"
+
+# 3. Set the shared secret (The Cookie)
+# Replace 'my_secret_password' with whatever you want
+export RELEASE_COOKIE="my_secret_password"
+
+Step 3: Compile and Burn
+
+Now that the configuration is set, build your firmware without the Livebook dependency:
+
+    Clean up: mix deps.clean --all (Just to be safe since we moved things).
+
+    Get deps: mix deps.get
+
+    Build: mix firmware
+
+    Burn: mix burn
+
+Step 4: Connect from Livebook (On your Laptop)
+
+Once the Pi is plugged in and the green LED is blinking (meaning it's booted), open the Livebook app on your laptop:
+
+    Click "New Notebook".
+
+    Look at the sidebar on the left and click "Runtime Settings" (the computer chip icon).
+
+    Change "Runtime Type" to "Attached Node".
+
+    Fill in the fields exactly as you did in the file:
+
+        Name: potentiometer@nerves.local (Replace potentiometer with your app name if it's different).
+
+        Cookie: my_secret_password
+
+    Click "Connect".
+
+How to verify it worked
+
+In a code cell in Livebook, type this and run it:
+Elixir
+
+# This will return the name of the Pi, not your laptop!
+node()
+
+If it returns :"potentiometer@nerves.local", you are officially "teleported" into the Pi. You can now write Circuits.GPIO code to turn on your LEDs or read your CO sensor, and use VegaLite to draw the graphs on your laptop screen.
